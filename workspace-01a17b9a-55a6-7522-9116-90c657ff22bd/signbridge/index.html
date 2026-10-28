@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SignBridge — Two-way sign language communication</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23131a2e'/%3E%3Cpath d='M20 42V28a4 4 0 0 1 8 0v10' stroke='%232dd4bf' stroke-width='5' stroke-linecap='round' fill='none'/%3E%3Cpath d='M28 40V24a4 4 0 0 1 8 0v16' stroke='%238b7cff' stroke-width='5' stroke-linecap='round' fill='none'/%3E%3C/svg%3E" />
+<style>
+/* ============================= TOKENS ============================= */
+:root{
+  --bg:#060812;
+  --card:rgba(255,255,255,.045);
+  --card-2:rgba(255,255,255,.075);
+  --line:rgba(255,255,255,.09);
+  --line-strong:rgba(255,255,255,.18);
+  --tx:#e9edf9;
+  --muted:#8e9ab9;
+  --teal:#2dd4bf;
+  --violet:#8b7cff;
+  --blue:#4f8cff;
+  --amber:#fbbf24;
+  --rose:#fb7185;
+  --radius:20px;
+  --fs:16px;
+  --speed:1;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{overflow-x:hidden}
+body{overflow-x:hidden}
+body{
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:var(--fs);
+  color:var(--tx);
+  background:
+    radial-gradient(1100px 640px at 12% -12%, #17224d 0%, rgba(23,34,77,0) 62%),
+    radial-gradient(900px 560px at 92% -8%, #0b2f38 0%, rgba(11,47,56,0) 58%),
+    radial-gradient(800px 700px at 50% 120%, #1a1140 0%, rgba(26,17,64,0) 60%),
+    var(--bg);
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+body.hc{--card:rgba(255,255,255,.10);--card-2:rgba(255,255,255,.16);--line:rgba(255,255,255,.30);--muted:#c4cee6;--tx:#ffffff}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+:focus-visible{outline:3px solid var(--teal);outline-offset:3px;border-radius:10px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ============================= TOP BAR ============================= */
+.topbar{
+  position:sticky;top:0;z-index:40;
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  padding:14px clamp(14px,3vw,28px);
+  background:rgba(6,8,18,.72);
+  backdrop-filter:blur(18px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:12px;margin-right:auto}
+.brand-mark{
+  width:44px;height:44px;border-radius:14px;flex:0 0 auto;
+  display:grid;place-items:center;
+  background:linear-gradient(145deg,#2dd4bf,#4f8cff 55%,#8b7cff);
+  box-shadow:0 10px 30px rgba(45,212,191,.28), inset 0 1px 0 rgba(255,255,255,.5);
+}
+.brand-mark svg{width:26px;height:26px}
+.brand h1{font-size:1.06rem;margin:0;letter-spacing:-.2px;line-height:1.15}
+.brand p{margin:2px 0 0;font-size:.74rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+
+.modes{display:flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.04)}
+.modes button{
+  padding:9px 15px;border-radius:999px;font-size:.86rem;color:var(--muted);font-weight:600;
+  transition:color .18s, background .18s, box-shadow .18s;white-space:nowrap;
+}
+.modes button:hover{color:var(--tx)}
+.modes button[aria-selected="true"]{
+  color:#05121a;
+  background:linear-gradient(140deg,#5eead4,#7dd3fc 45%,#a5b4fc);
+  box-shadow:0 6px 18px rgba(94,234,212,.25);
+}
+.topactions{display:flex;gap:8px}
+.icon-btn{
+  width:42px;height:42px;border-radius:13px;border:1px solid var(--line);
+  background:var(--card);display:grid;place-items:center;transition:.18s;
+}
+.icon-btn:hover{background:var(--card-2);border-color:var(--line-strong);transform:translateY(-1px)}
+.icon-btn svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* ============================= LAYOUT ============================= */
+main{max-width:1380px;margin:0 auto;padding:22px clamp(14px,3vw,28px) 60px}
+.stage-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:stretch}
+body.mode-sign .stage-grid{grid-template-columns:1fr}
+body.mode-sign #panelVoice{display:none}
+body.mode-voice .stage-grid{grid-template-columns:1fr}
+body.mode-voice #panelSign{display:none}
+@media (max-width:960px){.stage-grid{grid-template-columns:1fr}}
+
+.card{
+  background:linear-gradient(180deg,rgba(255,255,255,.065),rgba(255,255,255,.018));
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:0 24px 60px -30px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.panel{padding:16px;display:flex;flex-direction:column;gap:14px}
+.panel > .chips:last-child{margin-top:auto}
+.panel-hd{display:flex;align-items:center;gap:10px}
+.panel-hd h2{font-size:.98rem;margin:0;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.panel-hd .spacer{margin-left:auto}
+.badge{
+  font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  padding:5px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);
+  background:rgba(255,255,255,.03);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+}
+.badge.ok{color:#8ff2e2;border-color:rgba(45,212,191,.35);background:rgba(45,212,191,.10)}
+.badge.warn{color:#ffd479;border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.10)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 0 rgba(45,212,191,.6);animation:pulse 2s infinite}
+.dot.violet{background:var(--violet);box-shadow:0 0 0 0 rgba(139,124,255,.6);animation-name:pulseV}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,212,191,.55)}70%{box-shadow:0 0 0 9px rgba(45,212,191,0)}100%{box-shadow:0 0 0 0 rgba(45,212,191,0)}}
+@keyframes pulseV{0%{box-shadow:0 0 0 0 rgba(139,124,255,.55)}70%{box-shadow:0 0 0 9px rgba(139,124,255,0)}100%{box-shadow:0 0 0 0 rgba(139,124,255,0)}}
+
+/* ============================= STAGES ============================= */
+.stage{
+  position:relative;height:352px;max-height:min(46vh,400px);border-radius:16px;overflow:hidden;
+  border:1px solid var(--line);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(79,140,255,.20), rgba(79,140,255,0) 62%),
+    linear-gradient(180deg,#0f1730,#080c17 78%);
+}
+.stage.sign-bg{background:
+    radial-gradient(120% 90% at 50% 2%, rgba(139,124,255,.22), rgba(139,124,255,0) 60%),
+    linear-gradient(180deg,#141334,#080c17 80%);}
+.stage svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage-grain{position:absolute;inset:0;pointer-events:none;opacity:.35;
+  background-image:radial-gradient(rgba(255,255,255,.12) 1px, transparent 1px);background-size:26px 26px;
+  mask-image:radial-gradient(circle at 50% 40%, black, transparent 72%)}
+.stage-vignette{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 90px 30px rgba(3,5,12,.85)}
+.scanline{position:absolute;left:0;right:0;height:2px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(45,212,191,.75),transparent);
+  filter:blur(.4px);animation:scan 4.6s ease-in-out infinite}
+@keyframes scan{0%{top:6%;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:94%;opacity:0}}
+
+.corner{position:absolute;width:22px;height:22px;border:2px solid rgba(45,212,191,.6);pointer-events:none}
+.corner.tl{top:12px;left:12px;border-right:0;border-bottom:0;border-radius:6px 0 0 0}
+.corner.tr{top:12px;right:12px;border-left:0;border-bottom:0;border-radius:0 6px 0 0}
+.corner.bl{bottom:12px;left:12px;border-right:0;border-top:0;border-radius:0 0 0 6px}
+.corner.br{bottom:12px;right:12px;border-left:0;border-top:0;border-radius:0 0 6px 0}
+
+.stage-badges{position:absolute;top:12px;left:38px;right:38px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.mini{
+  font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:5px 9px;border-radius:8px;background:rgba(3,6,14,.62);
+  border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(6px);color:#dbe4f7;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.mini .led{width:6px;height:6px;border-radius:50%;background:var(--rose)}
+.mini.live .led{background:var(--teal);animation:blink 1.6s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+.caption{
+  display:flex;flex-direction:column;gap:3px;min-height:58px;
+  padding:11px 14px;border-radius:14px;background:rgba(4,7,16,.55);
+  border:1px solid var(--line);
+}
+.caption .word{color:#fff}
+.caption .word{font-size:1.16rem;font-weight:800;letter-spacing:.02em;color:#fff}
+.caption .gloss{font-size:.76rem;color:var(--muted);letter-spacing:.04em}
+.stage-tools{position:absolute;top:12px;right:12px;display:flex;gap:6px}
+.tool{
+  padding:6px 10px;border-radius:9px;font-size:.72rem;font-weight:700;color:#dbe4f7;
+  background:rgba(4,7,16,.66);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(6px);
+  transition:.15s
+}
+.tool:hover{background:rgba(139,124,255,.28);border-color:rgba(139,124,255,.5)}
+
+/* ============================= OUTPUT ============================= */
+.out{display:flex;flex-direction:column;gap:9px}
+.out-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.conf{display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:700;letter-spacing:.07em;text-transform:uppercase;font-size:.7rem}
+.conf-bar{width:64px;height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
+.conf-bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--teal),#7dd3fc);transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.transcript{
+  margin:0;min-height:62px;padding:14px 16px;border-radius:14px;
+  background:rgba(4,7,16,.55);border:1px solid var(--line);
+  font-size:1.28rem;font-weight:700;line-height:1.35;letter-spacing:-.01em;
+}
+.transcript.empty{color:#5f6c8a;font-weight:500;font-size:1rem}
+.caret{display:inline-block;width:2px;height:1.02em;background:var(--teal);vertical-align:-2px;margin-left:2px;animation:caret 1s steps(1) infinite}
+@keyframes caret{50%{opacity:0}}
+
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;padding:10px 15px;border-radius:12px;
+  border:1px solid var(--line);background:var(--card);font-size:.86rem;font-weight:650;
+  transition:transform .16s, background .16s, border-color .16s, box-shadow .16s;
+}
+.btn:hover{background:var(--card-2);border-color:var(--line-strong);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.btn.primary{
+  color:#04121a;border-color:transparent;
+  background:linear-gradient(140deg,#5eead4,#60a5fa 60%,#a78bfa);
+  box-shadow:0 10px 26px -12px rgba(96,165,250,.9);
+}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.ghost{background:transparent;color:var(--muted)}
+.btn.violet{
+  color:#0a0618;border-color:transparent;
+  background:linear-gradient(140deg,#a78bfa,#818cf8 55%,#5eead4);
+  box-shadow:0 10px 26px -12px rgba(167,139,250,.9);
+}
+
+/* ============================= CHIPS ============================= */
+.chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chips-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-right:2px}
+.chip{
+  padding:8px 13px;border-radius:999px;border:1px solid var(--line);
+  background:rgba(255,255,255,.035);font-size:.83rem;font-weight:600;color:#cdd7ee;transition:.16s;
+}
+.chip:hover{border-color:rgba(45,212,191,.55);background:rgba(45,212,191,.13);color:#eafffb;transform:translateY(-1px)}
+.chip.v:hover{border-color:rgba(139,124,255,.55);background:rgba(139,124,255,.16);color:#f2eeff}
+.chip.sm{padding:6px 10px;font-size:.78rem}
+.chip[aria-pressed="true"]{border-color:rgba(45,212,191,.65);background:rgba(45,212,191,.2);color:#eafffb}
+
+/* ============================= MIC / WAVE ============================= */
+.microw{display:flex;align-items:center;gap:14px;padding:10px 12px;border-radius:14px;background:rgba(4,7,16,.45);border:1px solid var(--line)}
+.mic{
+  position:relative;flex:0 0 auto;width:54px;height:54px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(145deg,#8b7cff,#6d5ef0);color:#fff;
+  box-shadow:0 12px 30px -12px rgba(139,124,255,.95);transition:transform .16s, filter .16s;
+}
+.mic:hover{transform:scale(1.04)}
+.mic svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mic.listening{background:linear-gradient(145deg,#fb7185,#f43f5e);box-shadow:0 12px 30px -10px rgba(244,63,94,.9)}
+.mic.listening::after{content:"";position:absolute;inset:-8px;border-radius:50%;border:2px solid rgba(244,63,94,.55);animation:ring 1.6s ease-out infinite}
+@keyframes ring{0%{transform:scale(.9);opacity:.9}100%{transform:scale(1.32);opacity:0}}
+.wave{display:flex;align-items:center;gap:3px;height:38px;flex:1;min-width:0}
+.wave i{display:block;flex:1;min-width:2px;height:10%;border-radius:99px;background:linear-gradient(180deg,#a78bfa,#5eead4);opacity:.45;transition:height .2s}
+.wave.on i{animation:bar 1.05s ease-in-out infinite;animation-delay:var(--d);opacity:.95}
+@keyframes bar{0%,100%{height:12%}50%{height:88%}}
+.speech-status{font-size:.78rem;color:var(--muted);font-weight:600;white-space:nowrap}
+@media (max-width:520px){.speech-status{display:none}}
+
+.typebar{display:flex;gap:8px}
+.typebar input{
+  flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+  background:rgba(4,7,16,.6);font-size:.92rem;
+}
+.typebar input::placeholder{color:#6b7796}
+.typebar input:focus{outline:none;border-color:rgba(139,124,255,.65);box-shadow:0 0 0 3px rgba(139,124,255,.18)}
+
+/* ============================= LOG ============================= */
+.log{margin-top:20px;padding:18px}
+.log-hd{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.log-hd h2{font-size:.98rem;margin:0}
+.log-hd .spacer{margin-left:auto}
+.log-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:320px;overflow:auto}
+.log-list:empty::after{content:"Nothing yet — try a sign or say something to start the conversation.";color:#5f6c8a;font-size:.9rem}
+.bubble{
+  display:flex;gap:10px;align-items:flex-start;max-width:min(680px,92%);
+  padding:11px 14px;border-radius:14px;border:1px solid var(--line);
+  background:rgba(255,255,255,.04);animation:pop .3s cubic-bezier(.2,.9,.3,1.2);
+}
+@keyframes pop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+.bubble.me{align-self:flex-start;border-color:rgba(45,212,191,.28);background:linear-gradient(120deg,rgba(45,212,191,.16),rgba(45,212,191,.04))}
+.bubble.them{align-self:flex-end;border-color:rgba(139,124,255,.3);background:linear-gradient(120deg,rgba(139,124,255,.16),rgba(139,124,255,.04))}
+.bubble .ico{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto;background:rgba(255,255,255,.1)}
+.bubble .ico svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.bubble.me .ico{color:#5eead4}
+.bubble.them .ico{color:#b6a8ff}
+.bubble .txt{font-size:.94rem;line-height:1.45;font-weight:600}
+.bubble .meta{font-size:.68rem;color:var(--muted);margin-top:3px;letter-spacing:.05em;text-transform:uppercase;font-weight:700}
+
+/* ============================= DRAWER ============================= */
+.scrim{position:fixed;inset:0;background:rgba(3,5,12,.6);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:.25s;z-index:50}
+.scrim.open{opacity:1;pointer-events:auto}
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;width:min(370px,92vw);z-index:60;
+  background:linear-gradient(180deg,#0d1426,#080c17);
+  border-left:1px solid var(--line);box-shadow:-30px 0 70px -40px #000;
+  transform:translateX(102%);visibility:hidden;transition:transform .3s cubic-bezier(.3,.9,.3,1), visibility .3s;
+  display:flex;flex-direction:column;
+}
+.drawer.open{transform:none;visibility:visible}
+.drawer-hd{display:flex;align-items:center;padding:18px;border-bottom:1px solid var(--line)}
+.drawer-hd h2{font-size:1rem;margin:0}
+.drawer-hd button{margin-left:auto}
+.drawer-body{padding:18px;display:flex;flex-direction:column;gap:20px;overflow:auto}
+.field{display:flex;flex-direction:column;gap:9px}
+.field label{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.seg{display:flex;gap:4px;padding:4px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.seg button{flex:1;padding:9px;border-radius:8px;font-size:.82rem;font-weight:700;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:rgba(45,212,191,.18);color:#c9fff7;box-shadow:inset 0 0 0 1px rgba(45,212,191,.4)}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:.9rem;font-weight:600}
+.track{width:46px;height:26px;border-radius:99px;background:rgba(255,255,255,.14);position:relative;transition:.2s;flex:0 0 auto;border:1px solid var(--line)}
+.track::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
+.switch[aria-pressed="true"] .track{background:rgba(45,212,191,.6)}
+.switch[aria-pressed="true"] .track::after{transform:translateX(20px)}
+.hint{font-size:.78rem;color:var(--muted);line-height:1.5}
+.kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;padding:2px 6px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.07)}
+
+/* ============================= TOAST ============================= */
+.toast-wrap{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{
+  padding:11px 16px;border-radius:12px;font-size:.85rem;font-weight:600;
+  background:rgba(11,17,32,.95);border:1px solid var(--line-strong);
+  box-shadow:0 20px 50px -20px #000;animation:toastIn .3s ease, toastOut .3s ease 3.4s forwards;
+  max-width:min(440px,90vw);text-align:center;
+}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateY(8px)}}
+
+.mobile-modes{display:none;gap:4px;padding:4px;margin:0 auto 16px;max-width:1380px;
+  border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.04)}
+.mobile-modes button{flex:1;padding:10px 4px;border-radius:999px;font-size:.8rem;font-weight:600;color:var(--muted)}
+.mobile-modes button[aria-selected="true"]{color:#05121a;background:linear-gradient(140deg,#5eead4,#7dd3fc 45%,#a5b4fc)}
+@media (max-width:760px){
+  .brand{order:0}
+  .topactions{order:1}
+  .topbar .modes{display:none}
+  .mobile-modes{display:flex}
+  #miniLatency{display:none}
+  .stage{height:300px}
+  .panel{padding:13px}
+  .transcript{font-size:1.12rem}
+  .microw{gap:10px}
+  .typebar input{font-size:.86rem}
+  .btn{padding:9px 12px;font-size:.82rem}
+  .log{padding:14px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001s !important;animation-iteration-count:1 !important;transition-duration:.001s !important}
+}
+</style>
+</head>
+<body class="mode-both">
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#04121a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 20V11a2 2 0 0 1 4 0v5"/><path d="M11 16V8a2 2 0 0 1 4 0v7"/>
+        <path d="M15 15v-3a2 2 0 0 1 4 0v5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6v-1"/>
+      </svg>
+    </div>
+    <div>
+      <h1>SignBridge</h1>
+      <p>Two-way accessibility</p>
+    </div>
+  </div>
+
+  <nav class="modes" role="tablist" aria-label="Communication mode">
+    <button role="tab" aria-selected="true" data-mode="both">Two-way</button>
+    <button role="tab" aria-selected="false" data-mode="sign">Sign → Voice</button>
+    <button role="tab" aria-selected="false" data-mode="voice">Voice → Sign</button>
+  </nav>
+
+  <div class="topactions">
+    <button class="icon-btn" id="btnDemo" title="Play a scripted demo conversation" aria-label="Play demo conversation">
+      <svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button class="icon-btn" id="btnSettings" aria-label="Open settings" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.43.66.79.81H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <nav class="mobile-modes" role="tablist" aria-label="Communication mode (compact)">
+    <button role="tab" aria-selected="true" data-mode="both">Two-way</button>
+    <button role="tab" aria-selected="false" data-mode="sign">Sign → Voice</button>
+    <button role="tab" aria-selected="false" data-mode="voice">Voice → Sign</button>
+  </nav>
+
+  <div class="stage-grid">
+
+    <!-- ============================ SIGN PANEL ============================ -->
+    <section class="card panel" id="panelSign" aria-labelledby="signTitle">
+      <div class="panel-hd">
+        <span class="dot" aria-hidden="true"></span>
+        <h2 id="signTitle">Sign → Text &amp; Speech</h2>
+        <span class="spacer"></span>
+        <span class="badge ok" id="camState"><span class="dot" style="animation:none"></span>Camera active</span>
+      </div>
+
+      <div class="stage" id="camStage">
+        <svg id="camSvg" viewBox="0 0 300 300" preserveAspectRatio="xMidYMax meet" role="img" aria-label="Camera view of a signing person with hand tracking landmarks"></svg>
+        <div class="stage-grain" aria-hidden="true"></div>
+        <div class="stage-vignette" aria-hidden="true"></div>
+        <div class="scanline" aria-hidden="true"></div>
+        <div class="corner tl" aria-hidden="true"></div><div class="corner tr" aria-hidden="true"></div>
+        <div class="corner bl" aria-hidden="true"></div><div class="corner br" aria-hidden="true"></div>
+        <div class="stage-badges" aria-hidden="true">
+          <span class="mini live"><span class="led"></span>Live</span>
+          <span class="mini" id="miniHands">2 hands · 21 pts</span>
+          <span class="mini" id="miniLatency">42 ms</span>
+        </div>
+      </div>
+
+      <div class="out">
+        <div class="out-top">
+          <span>Recognised text</span>
+          <span class="conf">confidence <span class="conf-bar"><i id="confBar"></i></span> <b id="confVal" style="color:var(--tx)">—</b></span>
+        </div>
+        <p class="transcript empty" id="signText" aria-live="polite">Waiting for a sign…</p>
+        <div class="btnrow">
+          <button class="btn primary" id="btnSpeak">
+            <svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            Speak aloud
+          </button>
+          <button class="btn" id="btnToLog">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Add to conversation
+          </button>
+          <button class="btn ghost" id="btnClearSign">Clear</button>
+        </div>
+        <p class="hint" style="margin:0">Confidence is the recogniser's certainty; anything under 70% would normally be confirmed with the signer before it is added to the transcript.</p>
+      </div>
+
+      <div class="chips" id="demoChips">
+        <span class="chips-label">Sign vocabulary</span>
+      </div>
+    </section>
+
+    <!-- ============================ VOICE PANEL ============================ -->
+    <section class="card panel" id="panelVoice" aria-labelledby="voiceTitle">
+      <div class="panel-hd">
+        <span class="dot violet" aria-hidden="true"></span>
+        <h2 id="voiceTitle">Voice → Text &amp; Sign</h2>
+        <span class="spacer"></span>
+        <span class="badge" id="micState">Mic idle</span>
+      </div>
+
+      <div class="stage sign-bg" id="signStage">
+        <svg id="signSvg" viewBox="0 0 300 300" preserveAspectRatio="xMidYMax meet" role="img" aria-label="Animated avatar performing sign language"></svg>
+        <div class="stage-grain" aria-hidden="true"></div>
+        <div class="stage-vignette" aria-hidden="true"></div>
+        <div class="stage-tools">
+          <button class="tool" id="btnReplay" title="Replay signs">↻ Replay</button>
+          <button class="tool" id="btnSpeed" title="Playback speed">1×</button>
+        </div>
+      </div>
+
+      <div class="caption" id="caption">
+        <span class="word" id="capWord">Ready when you are</span>
+        <span class="gloss" id="capGloss">Flat hand raised beside the head, waves side to side.</span>
+      </div>
+
+      <div class="microw">
+        <button class="mic" id="btnMic" aria-label="Start listening" aria-pressed="false">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8 21h8"/></svg>
+        </button>
+        <div class="wave" id="wave" aria-hidden="true"></div>
+        <span class="speech-status" id="speechStatus">Tap the mic and speak</span>
+      </div>
+
+      <form class="typebar" id="signForm" autocomplete="off">
+        <label class="sr-only" for="typeInput">Type what you want to say</label>
+        <input id="typeInput" placeholder="…or type here: “Thank you, see you tomorrow”" />
+        <button class="btn violet" type="submit">Sign it</button>
+      </form>
+
+      <div class="chips" id="phraseChips">
+        <span class="chips-label">Quick phrases</span>
+      </div>
+
+      <div class="chips" id="langChips">
+        <span class="chips-label">Speech input</span>
+        <button class="chip sm" data-lang="en-IN" aria-pressed="true">English (India)</button>
+        <button class="chip sm" data-lang="en-US" aria-pressed="false">English (US)</button>
+        <button class="chip sm" data-lang="en-GB" aria-pressed="false">English (UK)</button>
+        <button class="chip sm" data-lang="hi-IN" aria-pressed="false">हिन्दी (beta)</button>
+        <span class="hint" id="langNote" style="flex-basis:100%;margin:0">Recognition language is passed to the speech API; the sign animation currently maps English glosses.</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============================ LOG ============================ -->
+  <section class="card log" aria-labelledby="logTitle">
+    <div class="log-hd">
+      <h2 id="logTitle">Conversation</h2>
+      <span class="badge" id="logCount">0 messages</span>
+      <span class="spacer"></span>
+      <button class="btn" id="btnCopyLog">
+        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+        Copy transcript
+      </button>
+      <button class="btn ghost" id="btnClearLog">Clear</button>
+    </div>
+    <ol class="log-list" id="logList" aria-live="polite"></ol>
+  </section>
+</main>
+
+<!-- ============================ SETTINGS ============================ -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="drawerTitle">
+  <div class="drawer-hd">
+    <h2 id="drawerTitle">Accessibility &amp; display</h2>
+    <button class="icon-btn" id="btnCloseDrawer" aria-label="Close settings">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label>Text size</label>
+      <div class="seg" id="segTextSize">
+        <button data-size="15" aria-pressed="false">S</button>
+        <button data-size="16" aria-pressed="true">M</button>
+        <button data-size="18" aria-pressed="false">L</button>
+        <button data-size="20" aria-pressed="false">XL</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Signing speed</label>
+      <div class="seg" id="segSpeed">
+        <button data-speed="0.7" aria-pressed="false">0.7×</button>
+        <button data-speed="1" aria-pressed="true">1×</button>
+        <button data-speed="1.4" aria-pressed="false">1.4×</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Preferences</label>
+      <button class="switch" id="swSpeak" aria-pressed="true">Spoken output on sign<div class="track"></div></button>
+      <button class="switch" id="swGloss" aria-pressed="true">Show sign descriptions<div class="track"></div></button>
+      <button class="switch" id="swMotion" aria-pressed="false">Reduce motion<div class="track"></div></button>
+      <button class="switch" id="swContrast" aria-pressed="false">High contrast<div class="track"></div></button>
+    </div>
+
+    <div class="field">
+      <label>Keyboard shortcuts</label>
+      <p class="hint">
+        <span class="kbd">Space</span> start / stop listening &nbsp;·&nbsp;
+        <span class="kbd">1</span>–<span class="kbd">6</span> recognise a demo sign &nbsp;·&nbsp;
+        <span class="kbd">Esc</span> close panels
+      </p>
+    </div>
+
+    <p class="hint" style="border-top:1px solid var(--line);padding-top:16px">
+      <strong>Prototype note.</strong> Recognition and speech here are simulated so the interface can be explored without a
+      trained model or microphone access. The animation engine, captioning, transcript and accessibility controls are
+      fully functional — in production the pose stream would come from a hand-landmark model (e.g. MediaPipe Holistic)
+      and speech from the Web Speech / Whisper API.
+    </p>
+  </div>
+</aside>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   0. Helpers
+   ========================================================================== */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const lerpPt = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t)];
+const easeInOut = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+const clone = o => JSON.parse(JSON.stringify(o));
+
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3900);
+}
+
+/* ==========================================================================
+   1. Skeleton + 2-bone IK
+   Wrist targets are resolved into elbows so limb lengths never stretch.
+   ========================================================================== */
+const CENTER_X = 150;
+const SH = { L: [116, 144], R: [184, 144] };
+const UPPER = 56, FORE = 54;
+const HIP_L = [136, 236], HIP_R = [164, 236];
+
+function restPose(over = {}) {
+  return Object.assign({
+    lw: [101, 224], rw: [199, 224],
+    head: 0, tilt: 0, talk: .12,
+    lhand: 'flat', rhand: 'flat',
+    lbend: 0, rbend: 0
+  }, over);
+}
+const REST_POSE = restPose();
+
+function solveArm(shoulder, wrist, bendPref) {
+  let dx = wrist[0] - shoulder[0], dy = wrist[1] - shoulder[1];
+  let dist = Math.hypot(dx, dy) || .001;
+  dist = clamp(dist, Math.abs(UPPER - FORE) + 12, UPPER + FORE - 1);
+
+  // if the target is reachable it is honoured exactly, otherwise we pull in
+  const reach = Math.hypot(dx, dy) || .001;
+  const w = reach > dist ? [shoulder[0] + dx / reach * dist, shoulder[1] + dy / reach * dist] : wrist;
+
+  const base = Math.atan2(dx, dy);              // 0 = straight down
+  const cosA = (UPPER * UPPER + dist * dist - FORE * FORE) / (2 * UPPER * dist);
+  const A = Math.acos(clamp(cosA, -1, 1));
+
+  const build = sign => {
+    const u = base - sign * A;
+    const e = [shoulder[0] + UPPER * Math.sin(u), shoulder[1] + UPPER * Math.cos(u)];
+    const fa = Math.atan2(w[0] - e[0], w[1] - e[1]) - u;
+    const handAng = (u + fa) * 180 / Math.PI;
+    return { e, w, u, f: fa, handAng };
+  };
+  const a = build(1), b = build(-1);
+
+  // natural elbow = low and close to the body; bendPref can force a side
+  const hanging = wrist[1] > shoulder[1] + 40;        // arm relaxed at the side
+  const score = c => {
+    const lateral = Math.abs(c.e[0] - CENTER_X);
+    const inTorso = lateral < 26 ? -80 : 0;           // never park an elbow inside the body
+    const drop = c.e[1] - shoulder[1];
+    // a hanging arm wants the elbow almost directly below the shoulder,
+    // a raised arm wants it swung out and low
+    return inTorso + (hanging ? -lateral * 1.05 + drop * .25 : -lateral * .10 + drop * .5);
+  };
+  let pick = score(a) >= score(b) ? a : b;
+  if (bendPref === 1) pick = a;
+  if (bendPref === -1) pick = b;
+  return pick;
+}
+
+/* ==========================================================================
+   2. Drawing primitives
+   ========================================================================== */
+const PALETTES = {
+  person: {
+    skin: '#f0bd94', skinDark: '#d69a70', handEdge: '#b87a52',
+    sleeve: '#6d5cf0', sleeve2: '#8a7ef8', cuff: '#5443d6',
+    torso: '#5b49e6', torso2: '#7365f2', shirt: '#5b49e6',
+    pants: '#242c48', pants2: '#2d3654', shoe: '#141a2b',
+    hair: '#2b2442', shadow: 'rgba(0,0,0,.45)'
+  },
+  camera: {
+    skin: '#8494bd', skinDark: '#6c7ca6', handEdge: '#9db0d8',
+    sleeve: '#3a4a6b', sleeve2: '#465878', cuff: '#2c3854',
+    torso: '#354463', torso2: '#405073', shirt: '#354463',
+    pants: '#28334d', pants2: '#303c58', shoe: '#1b2338',
+    hair: '#2d3956', shadow: 'rgba(0,0,0,.55)'
+  }
+};
+
+/* Hand shapes: local frame with +y running from wrist to fingertips,
+   so every shape reads correctly however the forearm is rotated. */
+function handMarkup(shape, x, y, ang, pal) {
+  const rot = -ang;
+  const s = pal.skin, sd = pal.skinDark, ed = pal.handEdge;
+  let body;
+  switch (shape) {
+    case 'fist':
+      body = `<rect x="-10.5" y="-9" width="21" height="23" rx="9.5" fill="${s}" stroke="${ed}" stroke-width="1.1"/>
+              <rect x="-11.5" y="2" width="23" height="9" rx="4.5" fill="${s}" stroke="${ed}" stroke-width="1.1"/>
+              <path d="M-8,6 h16 M-8,9.5 h16" stroke="${sd}" stroke-width="1" opacity=".5"/>`;
+      break;
+    case 'point':
+      body = `<rect x="-9.5" y="-9" width="19" height="22" rx="9" fill="${s}" stroke="${ed}" stroke-width="1.1"/>
+              <rect x="-3.6" y="2" width="7.2" height="29" rx="3.6" fill="${s}" stroke="${ed}" stroke-width="1.1"/>
+              <rect x="-11.5" y="-2" width="6" height="12" rx="3" fill="${s}" stroke="${ed}" stroke-width="1.1"/>`;
+      break;
+    case 'cup':
+      body = `<path d="M-11.5,10 q11.5,9 23,0 l0,-13 q-11.5,-7 -23,0 z" fill="${s}" stroke="${ed}" stroke-width="1.1"/>
+              <path d="M-8,4 q8,4 16,0" stroke="${sd}" stroke-width="1.1" fill="none" opacity=".55"/>`;
+      break;
+    default: /* flat — open hand, fingers together */
+      body = `<rect x="-11" y="-9" width="22" height="24" rx="9.5" fill="${s}" stroke="${ed}" stroke-width="1.1"/>
+              <g fill="${s}" stroke="${ed}" stroke-width="1.1">
+                <rect x="-9.6" y="4" width="6" height="21" rx="3"/>
+                <rect x="-2.8" y="4" width="6" height="25" rx="3"/>
+                <rect x="4" y="4" width="6" height="22" rx="3"/>
+              </g>
+              <rect x="-15.5" y="-4" width="6.5" height="14" rx="3.2" fill="${s}" stroke="${ed}" stroke-width="1.1"/>
+              <path d="M-6,2 h12" stroke="${sd}" stroke-width="1" opacity=".4"/>`;
+  }
+  return `<g transform="translate(${x.toFixed(2)},${y.toFixed(2)}) rotate(${rot.toFixed(2)}) scale(1.1)">${body}</g>`;
+}
+
+/* 21-point hand landmark template (palm centre ≈ origin, +y = fingertips) */
+const LM = [[0,-2],[-6,2],[-11,8],[-14,14],[-16,20],[-5,-4],[-6,-13],[-6,-20],[-6,-26],
+            [0,-5],[0,-15],[0,-22],[0,-28],[5,-4],[6,-13],[6,-20],[6,-25],
+            [9,-2],[11,4],[12,10],[13,16]];
+const LM_CHAINS = [[0,1,2,3,4],[0,5,6,7,8],[0,9,10,11,12],[0,13,14,15,16],[0,17,18,19,20],[0,5,9,13,17]];
+
+function landmarks(x, y, ang, scale, color) {
+  const r = -ang * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
+  const pts = LM.map(([lx, ly]) => {
+    const px = lx * scale, py = ly * scale;
+    return [x + px * cs + py * sn, y - px * sn + py * cs];
+  });
+  let out = `<g>`;
+  for (const chain of LM_CHAINS) {
+    const d = chain.map((i, k) => `${k ? 'L' : 'M'}${pts[i][0].toFixed(1)},${pts[i][1].toFixed(1)}`).join(' ');
+    out += `<path d="${d}" fill="none" stroke="${color}" stroke-width="1" opacity=".55"/>`;
+  }
+  pts.forEach((p, i) => {
+    out += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i === 0 ? 2.3 : 1.6}" fill="${i === 0 ? '#fff' : color}"/>`;
+  });
+  return out + `</g>`;
+}
+
+function drawSigner(svg, pose, opts = {}) {
+  const pal = opts.palette || PALETTES.person;
+  const showLM = !!opts.landmarks;
+  const armL = solveArm(SH.L, pose.lw, pose.lbend);
+  const armR = solveArm(SH.R, pose.rw, pose.rbend);
+  const accent = opts.accent || '#2dd4bf';
+  const headTilt = (pose.head || 0) + (pose.tilt || 0);
+  const talk = clamp(pose.talk == null ? .12 : pose.talk, 0, 1);
+  const mouthH = 1.5 + talk * 5.2;
+
+  /* ---- one arm: sleeve, forearm, hand ---- */
+  const arm = (shoulder, A, shape) => {
+    const sx = shoulder[0], sy = shoulder[1];
+    return `
+      <line x1="${sx}" y1="${sy}" x2="${A.e[0].toFixed(2)}" y2="${A.e[1].toFixed(2)}"
+            stroke="${pal.sleeve}" stroke-width="21" stroke-linecap="round"/>
+      <line x1="${(sx + (A.e[0] - sx) * .72).toFixed(2)}" y1="${(sy + (A.e[1] - sy) * .72).toFixed(2)}"
+            x2="${A.e[0].toFixed(2)}" y2="${A.e[1].toFixed(2)}"
+            stroke="${pal.sleeve2}" stroke-width="21" stroke-linecap="round" opacity=".55"/>
+      <line x1="${A.e[0].toFixed(2)}" y1="${A.e[1].toFixed(2)}" x2="${A.w[0].toFixed(2)}" y2="${A.w[1].toFixed(2)}"
+            stroke="${pal.handEdge}" stroke-width="18" stroke-linecap="round"/>
+      <line x1="${A.e[0].toFixed(2)}" y1="${A.e[1].toFixed(2)}" x2="${A.w[0].toFixed(2)}" y2="${A.w[1].toFixed(2)}"
+            stroke="${pal.skin}" stroke-width="15" stroke-linecap="round"/>
+      <circle cx="${A.e[0].toFixed(2)}" cy="${A.e[1].toFixed(2)}" r="7.6" fill="${pal.skin}"/>
+      ${handMarkup(shape, A.w[0], A.w[1], A.handAng, pal)}`;
+  };
+
+  const legs = `
+    <path d="M123,224 h54 v76 h-54 z" fill="${pal.pants}"/>
+    <path d="M150,224 h27 v76 h-27 z" fill="${pal.pants2}" opacity=".55"/>
+    <path d="M118,214 q32,10 64,0" stroke="${pal.cuff}" stroke-width="2" fill="none" opacity=".35"/>`;
+
+  const torso = `
+    <path d="M113,144 C113,131 130,124 150,124 C170,124 187,131 187,144
+             L184,200 C184,212 176,220 168,224 L132,224 C124,220 116,212 116,200 Z"
+          fill="${pal.torso}"/>
+    <path d="M150,125 q12,1 19,6 l2,86 q-10,3 -21,3 z" fill="${pal.torso2}" opacity=".45"/>
+    <path d="M136,124 q14,10 28,0 q-4,10 -14,11 t-14,-11 z" fill="${pal.sleeve2}" opacity=".8"/>
+    <path d="M116,200 q34,10 68,0 l-2,10 q-32,9 -64,0 z" fill="${pal.cuff}" opacity=".45"/>`;
+
+  const head = `
+    <g transform="rotate(${headTilt.toFixed(2)} 150 84)">
+      <rect x="143" y="98" width="14" height="28" rx="6.6" fill="${pal.skinDark}"/>
+      <circle cx="150" cy="82" r="25" fill="${pal.skin}"/>
+      <path d="M125,80 a25,25 0 0 1 50,0 q-6,-18 -25,-18 t-25,18 z" fill="${pal.hair}"/>
+      <path d="M126,76 q-4,17 1,23 q-7,-18 -2,-26 z" fill="${pal.hair}"/>
+      <path d="M174,76 q4,17 -1,23 q7,-18 2,-26 z" fill="${pal.hair}"/>
+      <ellipse cx="140.5" cy="84" rx="2.5" ry="2.9" fill="#1b1f30"/>
+      <ellipse cx="159.5" cy="84" rx="2.5" ry="2.9" fill="#1b1f30"/>
+      <path d="M135,77 q5,-3 9,0" stroke="${pal.hair}" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+      <path d="M156,77 q5,-3 9,0" stroke="${pal.hair}" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+      <path d="M146,75 q4,-2 8,0" stroke="${pal.skinDark}" stroke-width="1.2" fill="none" opacity=".8"/>
+      <ellipse cx="150" cy="95" rx="5.6" ry="${mouthH.toFixed(2)}" fill="#9a5058"/>
+      <ellipse cx="150" cy="95" rx="5.6" ry="${mouthH.toFixed(2)}" fill="none" stroke="${pal.skinDark}" stroke-width=".9"/>
+    </g>`;
+
+  let overlay = '';
+  if (showLM) {
+    overlay = `
+      <g opacity=".95">
+        ${landmarks(armL.w[0], armL.w[1], armL.handAng, 1.35, accent)}
+        ${landmarks(armR.w[0], armR.w[1], armR.handAng, 1.35, accent)}
+        <circle cx="${armL.e[0].toFixed(1)}" cy="${armL.e[1].toFixed(1)}" r="2.8" fill="${accent}" opacity=".85"/>
+        <circle cx="${armR.e[0].toFixed(1)}" cy="${armR.e[1].toFixed(1)}" r="2.8" fill="${accent}" opacity=".85"/>
+        <circle cx="118" cy="144" r="2.8" fill="${accent}" opacity=".85"/>
+        <circle cx="182" cy="144" r="2.8" fill="${accent}" opacity=".85"/>
+        <circle cx="150" cy="84" r="3.2" fill="${accent}" opacity=".85"/>
+        <path d="M92,62 h116" stroke="${accent}" stroke-width="1" opacity=".2"/>
+      </g>`;
+  }
+
+  svg.innerHTML = `
+    
+    ${legs}
+    ${torso}
+    ${head}
+    <circle cx="118" cy="144" r="10.5" fill="${pal.sleeve}"/>
+    <circle cx="182" cy="144" r="10.5" fill="${pal.sleeve}"/>
+    ${arm(SH.L, armL, pose.lhand)}
+    ${arm(SH.R, armR, pose.rhand)}
+    ${overlay}`;
+}
+
+/* ==========================================================================
+   3. Sign library — keyframe sequences of wrist targets + hand shapes
+   ========================================================================== */
+const S = (label, gloss, note, keys) => ({ label, gloss, note, keys });
+
+const SIGNS = {
+  HELLO: S('Hello', 'HELLO', 'Flat hand raised beside the head, waves side to side.', [
+    restPose({ rw: [238, 100], rhand: 'flat' }),
+    restPose({ rw: [210, 88], rhand: 'flat', head: 2 }),
+    restPose({ rw: [244, 112], rhand: 'flat' }),
+    restPose({ rw: [210, 88], rhand: 'flat', head: 2 })
+  ]),
+  'THANK YOU': S('Thank you', 'THANK YOU', 'Flat hand touches the chin, then moves forward and down.', [
+    restPose({ rw: [166, 118], rhand: 'flat', head: -2 }),
+    restPose({ rw: [202, 152], rhand: 'flat' }),
+    restPose({ rw: [226, 182], rhand: 'flat', head: 3 })
+  ]),
+  PLEASE: S('Please', 'PLEASE', 'Flat right hand circles on the chest.', [
+    restPose({ rw: [162, 178], rhand: 'flat' }),
+    restPose({ rw: [182, 190], rhand: 'flat' }),
+    restPose({ rw: [164, 202], rhand: 'flat' }),
+    restPose({ rw: [146, 190], rhand: 'flat' }),
+    restPose({ rw: [162, 178], rhand: 'flat' })
+  ]),
+  YES: S('Yes', 'YES', 'Closed fist nods up and down.', [
+    restPose({ rw: [190, 168], rhand: 'fist' }),
+    restPose({ rw: [190, 192], rhand: 'fist' }),
+    restPose({ rw: [190, 168], rhand: 'fist' }),
+    restPose({ rw: [190, 192], rhand: 'fist' })
+  ]),
+  NO: S('No', 'NO', 'Index finger wags side to side.', [
+    restPose({ rw: [162, 122], rhand: 'point', head: -2 }),
+    restPose({ rw: [192, 128], rhand: 'point', head: 2 }),
+    restPose({ rw: [162, 122], rhand: 'point', head: -2 }),
+    restPose({ rw: [192, 128], rhand: 'point', head: 2 })
+  ]),
+  HELP: S('Help', 'HELP', 'Right fist rests on the open left palm, both hands lift.', [
+    restPose({ lw: [166, 212], lhand: 'cup', rw: [168, 192], rhand: 'fist' }),
+    restPose({ lw: [168, 196], lhand: 'cup', rw: [170, 176], rhand: 'fist' }),
+    restPose({ lw: [170, 180], lhand: 'cup', rw: [172, 160], rhand: 'fist', head: 2 })
+  ]),
+  SORRY: S('Sorry', 'SORRY', 'A-shaped fist circles on the chest.', [
+    restPose({ rw: [160, 176], rhand: 'fist' }),
+    restPose({ rw: [178, 190], rhand: 'fist' }),
+    restPose({ rw: [160, 202], rhand: 'fist' }),
+    restPose({ rw: [142, 190], rhand: 'fist' })
+  ]),
+  NAME: S('Name', 'NAME', 'Right hand taps twice on the open left palm.', [
+    restPose({ lw: [170, 206], lhand: 'cup', rw: [170, 184], rhand: 'flat' }),
+    restPose({ lw: [170, 206], lhand: 'cup', rw: [170, 198], rhand: 'flat' }),
+    restPose({ lw: [170, 206], lhand: 'cup', rw: [170, 184], rhand: 'flat' })
+  ]),
+  WATER: S('Water', 'WATER', 'Index finger taps the chin twice.', [
+    restPose({ rw: [166, 112], rhand: 'point', head: -2 }),
+    restPose({ rw: [170, 100], rhand: 'point', head: -2 }),
+    restPose({ rw: [166, 112], rhand: 'point', head: -2 })
+  ]),
+  'HOW ARE YOU': S('How are you?', 'HOW ARE YOU', 'Both hands open outward, palms up, with a small circle.', [
+    restPose({ lw: [108, 182], rw: [194, 182], lhand: 'cup', rhand: 'cup' }),
+    restPose({ lw: [92, 172], rw: [210, 172], lhand: 'cup', rhand: 'cup' }),
+    restPose({ lw: [110, 170], rw: [192, 170], lhand: 'cup', rhand: 'cup' }),
+    restPose({ lw: [108, 182], rw: [194, 182], lhand: 'cup', rhand: 'cup' })
+  ]),
+  'NICE TO MEET YOU': S('Nice to meet you', 'NICE TO MEET YOU', 'Both flat hands move outward from the chest.', [
+    restPose({ lw: [132, 198], rw: [170, 198], lhand: 'flat', rhand: 'flat' }),
+    restPose({ lw: [106, 184], rw: [196, 184], lhand: 'flat', rhand: 'flat' }),
+    restPose({ lw: [88, 172], rw: [214, 172], lhand: 'flat', rhand: 'flat', head: 2 })
+  ]),
+  WAIT: S('Wait', 'WAIT', 'Both palms up in front, fingers wiggle.', [
+    restPose({ lw: [122, 196], rw: [180, 196], lhand: 'cup', rhand: 'cup' }),
+    restPose({ lw: [118, 184], rw: [176, 184], lhand: 'cup', rhand: 'cup' }),
+    restPose({ lw: [122, 196], rw: [180, 196], lhand: 'cup', rhand: 'cup' })
+  ]),
+  SLOW: S('Slow', 'SLOW', 'Right hand slides slowly up the open left palm.', [
+    restPose({ lw: [152, 208], lhand: 'cup', rw: [126, 212], rhand: 'flat' }),
+    restPose({ lw: [152, 208], lhand: 'cup', rw: [152, 198], rhand: 'flat' }),
+    restPose({ lw: [152, 208], lhand: 'cup', rw: [180, 186], rhand: 'flat' })
+  ]),
+  'GOOD MORNING': S('Good morning', 'GOOD MORNING', 'The left forearm is the horizon; the right hand rises over it like the sun.', [
+    restPose({ lw: [62, 174], lhand: 'flat', rbend: -1, rw: [150, 226], rhand: 'cup' }),
+    restPose({ lw: [62, 174], lhand: 'flat', rbend: -1, rw: [150, 176], rhand: 'cup' }),
+    restPose({ lw: [62, 174], lhand: 'flat', rbend: -1, rw: [154, 132], rhand: 'cup', head: 4 })
+  ]),
+  BYE: S('Goodbye', 'BYE', 'Open hand raised high, waves.', [
+    restPose({ rw: [242, 92], rhand: 'flat' }),
+    restPose({ rw: [212, 80], rhand: 'flat', head: 2 }),
+    restPose({ rw: [246, 104], rhand: 'flat' }),
+    restPose({ rw: [212, 80], rhand: 'flat', head: 2 })
+  ]),
+  UNDERSTAND: S('I understand', 'UNDERSTAND', 'Index finger flicks up beside the forehead.', [
+    restPose({ rw: [172, 114], rhand: 'point' }),
+    restPose({ rw: [174, 98], rhand: 'point', head: 3 }),
+    restPose({ rw: [172, 114], rhand: 'point' })
+  ]),
+  FRIEND: S('Friend', 'FRIEND', 'Both index fingers hook together, then turn.', [
+    restPose({ lw: [136, 188], rw: [166, 188], lhand: 'point', rhand: 'point' }),
+    restPose({ lw: [146, 192], rw: [156, 192], lhand: 'point', rhand: 'point' }),
+    restPose({ lw: [134, 200], rw: [168, 200], lhand: 'point', rhand: 'point' })
+  ])
+};
+
+const WORD_MAP = {
+  hello: 'HELLO', hi: 'HELLO', hey: 'HELLO', goodbye: 'BYE', bye: 'BYE', morning: 'GOOD MORNING',
+  thank: 'THANK YOU', thanks: 'THANK YOU', please: 'PLEASE', yes: 'YES', yeah: 'YES',
+  no: 'NO', nope: 'NO', help: 'HELP', sorry: 'SORRY', name: 'NAME', water: 'WATER',
+  wait: 'WAIT', slow: 'SLOW', slowly: 'SLOW', understand: 'UNDERSTAND', friend: 'FRIEND'
+};
+const PHRASE_MAP = [
+  ['how are you', 'HOW ARE YOU'],
+  ['nice to meet you', 'NICE TO MEET YOU'],
+  ['good morning', 'GOOD MORNING'],
+  ['thank you', 'THANK YOU'],
+  ['see you later', 'BYE']
+];
+
+/* ==========================================================================
+   4. Player — interpolates a list of steps into a timeline
+   ========================================================================== */
+class SignPlayer {
+  constructor(svg, opts = {}) {
+    this.svg = svg;
+    this.opts = opts;
+    this.pose = clone(REST_POSE);
+    this.segs = [];
+    this.total = 0;
+    this.elapsed = 0;
+    this.loop = false;
+    this.playing = false;
+    this.speed = 1;
+    this.onCaption = null;
+    this.onEnd = null;
+    this.lastLabel = null;
+    this._last = performance.now();
+    this._raf = requestAnimationFrame(this._tick = this._tick.bind(this));
+    this.draw();
+  }
+  draw() { drawSigner(this.svg, this.pose, this.opts); }
+  say(label, gloss) { if (this.onCaption) this.onCaption(label, gloss); }
+
+  play(steps, { loop = false } = {}) {
+    if (!steps || !steps.length) return;
+    let t = 0;
+    const segs = [];
+    let from = clone(this.pose);
+    for (const st of steps) {
+      const move = Math.max(170, (st.dur || 520) * .55);
+      const hold = (st.dur || 520) - move;
+      segs.push({ t0: t, t1: t + move, a: from, b: st.pose, label: st.label, gloss: st.gloss });
+      t += move;
+      if (hold > 0) {
+        segs.push({ t0: t, t1: t + hold, a: st.pose, b: st.pose, label: st.label, gloss: st.gloss });
+        t += hold;
+      }
+      from = st.pose;
+    }
+    if (loop) {
+      segs.push({ t0: t, t1: t + 700, a: from, b: steps[0].pose, label: steps[0].label, gloss: steps[0].gloss });
+      t += 700;
+    } else {
+      segs.push({ t0: t, t1: t + 420, a: from, b: REST_POSE });
+      t += 420;
+    }
+    this.segs = segs;
+    this.total = t;
+    this.elapsed = 0;
+    this.loop = loop;
+    this.playing = true;
+    this.lastLabel = null;
+    this._last = performance.now();
+  }
+
+  stop() { this.playing = false; }
+
+  _tick(now) {
+    const dt = Math.min(64, now - this._last);
+    this._last = now;
+    if (this.playing) {
+      this.elapsed += dt * this.speed;
+      if (this.elapsed >= this.total) {
+        if (this.loop) this.elapsed %= this.total;
+        else { this.playing = false; this.elapsed = this.total; }
+      }
+      const t = this.elapsed;
+      let seg = this.segs[this.segs.length - 1];
+      for (const s of this.segs) { if (t >= s.t0 && t <= s.t1) { seg = s; break; } }
+      if (seg) {
+        const p = seg.t1 > seg.t0 ? clamp((t - seg.t0) / (seg.t1 - seg.t0), 0, 1) : 1;
+        const e = easeInOut(p);
+        const a = seg.a, b = seg.b;
+        const shaped = p > .3 ? b : a;
+        const talkBase = lerp(a.talk == null ? .12 : a.talk, b.talk == null ? .12 : b.talk, e);
+        this.pose = {
+          lw: lerpPt(a.lw, b.lw, e),
+          rw: lerpPt(a.rw, b.rw, e),
+          head: lerp(a.head || 0, b.head || 0, e),
+          tilt: lerp(a.tilt || 0, b.tilt || 0, e),
+          talk: talkBase * (.65 + .35 * Math.abs(Math.sin(now / 320))),
+          lhand: shaped.lhand, rhand: shaped.rhand,
+          lbend: shaped.lbend, rbend: shaped.rbend
+        };
+        if (seg.label && seg.label !== this.lastLabel) {
+          this.lastLabel = seg.label;
+          this.say(seg.label, seg.gloss);
+        }
+        this.draw();
+        if (!this.playing && !this.loop) {
+          this.say(null, null);
+          if (this.onEnd) this.onEnd();
+        }
+      }
+    } else {
+      this.pose.talk = .1 + .05 * Math.sin(now / 640);
+      this.draw();
+    }
+    this._raf = requestAnimationFrame(this._tick);
+  }
+}
+
+/* ==========================================================================
+   5. App state + instances
+   ========================================================================== */
+const state = {
+  speakOut: true, showGloss: true, reduceMotion: false,
+  speed: 1, currentSign: null, currentText: '', log: [], listening: false
+};
+
+const camPlayer = new SignPlayer($('#camSvg'), { palette: PALETTES.camera, landmarks: true, accent: '#2dd4bf' });
+const avatarPlayer = new SignPlayer($('#signSvg'), { palette: PALETTES.person, landmarks: false });
+
+function idleCamera() {
+  camPlayer.play([
+    { pose: restPose({ rw: [199, 224], talk: .1 }), dur: 1600 },
+    { pose: restPose({ rw: [201, 219], talk: .35 }), dur: 1600 },
+    { pose: restPose({ rw: [198, 224], talk: .12 }), dur: 1600 }
+  ], { loop: true });
+}
+function idleAvatar() {
+  avatarPlayer.play([
+    { pose: restPose({ talk: .1 }), dur: 1500 },
+    { pose: restPose({ rw: [201, 219], talk: .28 }), dur: 1500 }
+  ], { loop: true });
+}
+
+/* ==========================================================================
+   6. Text → signs
+   ========================================================================== */
+function textToSteps(text) {
+  const clean = text.toLowerCase().replace(/[^\w\s']/g, ' ').replace(/\s+/g, ' ').trim();
+  const items = [];
+  let rest = ' ' + clean + ' ';
+  for (const [phrase, key] of PHRASE_MAP) {
+    const re = new RegExp(' ' + phrase + ' ', 'g');
+    if (re.test(rest)) { items.push({ type: 'phrase', key, at: rest.search(re) }); rest = rest.replace(re, ' | '); }
+  }
+  const tail = [];
+  for (const chunk of rest.split('|')) {
+    for (const word of chunk.trim().split(' ')) {
+      if (!word) continue;
+      if (WORD_MAP[word]) tail.push({ type: 'sign', key: WORD_MAP[word] });
+      else if (word.length > 0) tail.push({ type: 'fs', word });
+    }
+  }
+  const all = items.concat(tail);
+  if (!all.length) all.push({ type: 'sign', key: 'HELLO' });
+
+  const steps = [];
+  for (const it of all) {
+    if (it.type === 'fs') {
+      const letters = it.word.toUpperCase().slice(0, 12).split('');
+      letters.forEach(ch => steps.push({
+        pose: restPose({ rw: [176, 150], rhand: 'point', head: 1, talk: .2 }),
+        dur: 380, label: ch, gloss: `Fingerspelling “${it.word}”`
+      }));
+      continue;
+    }
+    const sign = SIGNS[it.key];
+    if (!sign) continue;
+    sign.keys.forEach((pose, i) => steps.push({
+      pose, dur: i === 0 ? 560 : 480,
+      label: sign.label.toUpperCase(), gloss: sign.note
+    }));
+  }
+  return steps;
+}
+
+/* ==========================================================================
+   7. Speech out / in
+   ========================================================================== */
+let voices = [];
+function loadVoices() {
+  try { voices = window.speechSynthesis ? speechSynthesis.getVoices() : []; } catch (e) { voices = []; }
+}
+if (window.speechSynthesis) { loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
+
+function speak(text) {
+  if (!state.speakOut) { toast('Spoken output is off — turn it on in settings.'); return; }
+  try {
+    if (!window.speechSynthesis) throw new Error('tts unavailable');
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = .98; u.pitch = 1;
+    const v = voices.find(x => /^en[-_]/i.test(x.lang));
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+    toast('Speaking: “' + text + '”');
+  } catch (e) {
+    toast('Speech output is unavailable in this preview.');
+  }
+}
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+
+const DEMO_UTTERANCES = [
+  'Hello! How are you today?',
+  'Thank you, that helps a lot.',
+  'Please wait a moment.',
+  'Good morning, nice to meet you.',
+  'Sorry, could you speak slowly please?'
+];
+
+function simulateSpeech() {
+  const text = DEMO_UTTERANCES[Math.floor(Math.random() * DEMO_UTTERANCES.length)];
+  $('#speechStatus').textContent = 'Transcribing…';
+  let i = 0;
+  $('#typeInput').value = '';
+  const tick = setInterval(() => {
+    i += 2;
+    $('#typeInput').value = text.slice(0, i);
+    if (i >= text.length) {
+      clearInterval(tick);
+      $('#speechStatus').textContent = 'Heard: “' + text + '”';
+      signText(text);
+    }
+  }, 26);
+}
+
+function startListening() {
+  if (state.listening) { stopListening(true); return; }
+  state.listening = true;
+  $('#btnMic').classList.add('listening');
+  $('#btnMic').setAttribute('aria-pressed', 'true');
+  $('#btnMic').setAttribute('aria-label', 'Stop listening');
+  $('#wave').classList.add('on');
+  $('#micState').textContent = 'Listening…';
+  $('#micState').className = 'badge warn';
+  $('#speechStatus').textContent = 'Listening…';
+
+  if (SR) {
+    try {
+      recognition = new SR();
+      recognition.lang = speechLang;
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      let heard = false;
+      const fallback = () => {
+        if (!state.listening || heard) return;
+        heard = true;
+        try { recognition && recognition.abort(); } catch (e) {}
+        recognition = null;
+        simulateSpeech();
+      };
+      recognition.onresult = ev => {
+        heard = true;
+        clearTimeout(guard);
+        let txt = '';
+        for (let i = 0; i < ev.results.length; i++) txt += ev.results[i][0].transcript;
+        $('#typeInput').value = txt;
+        if (ev.results[ev.results.length - 1].isFinal) signText(txt);
+      };
+      recognition.onerror = fallback;
+      recognition.onend = () => { if (state.listening) setTimeout(() => { if (state.listening) stopListening(true); }, 400); };
+      // no speech API, no permission or no audio within ~2.4s → use the demo stream
+      const guard = setTimeout(fallback, 2400);
+      recognition.start();
+      return;
+    } catch (e) { /* fall through to the simulated stream */ }
+  }
+  simulateSpeech();
+}
+
+function stopListening(keepStatus) {
+  state.listening = false;
+  $('#btnMic').classList.remove('listening');
+  $('#btnMic').setAttribute('aria-pressed', 'false');
+  $('#btnMic').setAttribute('aria-label', 'Start listening');
+  $('#wave').classList.remove('on');
+  $('#micState').textContent = 'Mic idle';
+  $('#micState').className = 'badge';
+  if (!keepStatus) $('#speechStatus').textContent = 'Tap the mic and speak';
+  if (recognition) { try { recognition.stop(); } catch (e) {} recognition = null; }
+}
+
+/* ==========================================================================
+   8. Sign → text
+   ========================================================================== */
+function showSign(key, { addToLog = true, conf = null } = {}) {
+  const sign = SIGNS[key];
+  if (!sign) return;
+  state.currentSign = key;
+  camPlayer.speed = state.speed;
+  camPlayer.play(sign.keys.map((pose, i) => ({
+    pose, dur: i === 0 ? 600 : 520, label: sign.label.toUpperCase(), gloss: sign.note
+  })));
+
+  const confidence = conf != null ? conf : (0.86 + Math.random() * 0.12);
+  $('#signText').classList.remove('empty');
+  $('#confBar').style.width = Math.round(confidence * 100) + '%';
+  $('#confVal').textContent = Math.round(confidence * 100) + '%';
+
+  const full = sign.label;
+  let i = 0;
+  clearInterval(showSign._t);
+  showSign._t = setInterval(() => {
+    i++;
+    $('#signText').textContent = full.slice(0, i);
+    if (i >= full.length) {
+      clearInterval(showSign._t);
+      state.currentText = full;
+      if (state.speakOut) speak(full);
+      if (addToLog) addLog('me', full, 'sign');
+    }
+  }, 34);
+  state.currentText = full;
+}
+
+/* ==========================================================================
+   9. Voice → sign
+   ========================================================================== */
+function signText(text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) { toast('Type or say something first.'); return; }
+  state.currentText = trimmed;
+  avatarPlayer.speed = state.speed;
+  avatarPlayer.play(textToSteps(trimmed));
+  addLog('them', trimmed, 'voice');
+  stopListening(true);
+  $('#speechStatus').textContent = 'Tap the mic and speak';
+}
+
+/* ==========================================================================
+   10. Conversation log
+   ========================================================================== */
+const ICON_HAND = `<svg viewBox="0 0 24 24"><path d="M7 20V11a2 2 0 0 1 4 0v5"/><path d="M11 16V8a2 2 0 0 1 4 0v7"/><path d="M15 15v-3a2 2 0 0 1 4 0v5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6v-1"/></svg>`;
+const ICON_MIC = `<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>`;
+
+function addLog(side, text, via) {
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  state.log.push({ side, text, via, time });
+  const li = document.createElement('li');
+  li.className = 'bubble ' + (side === 'me' ? 'me' : 'them');
+  li.innerHTML = `<span class="ico">${side === 'me' ? ICON_HAND : ICON_MIC}</span>
+    <span><span class="txt"></span>
+    <span class="meta">${side === 'me' ? 'Signed' : 'Spoken'} · ${time}</span></span>`;
+  li.querySelector('.txt').textContent = text;
+  $('#logList').appendChild(li);
+  $('#logList').scrollTop = $('#logList').scrollHeight;
+  const n = state.log.length;
+  $('#logCount').textContent = n + (n === 1 ? ' message' : ' messages');
+}
+
+/* ==========================================================================
+   11. Wiring
+   ========================================================================== */
+const DEMO_ORDER = ['HELLO', 'THANK YOU', 'YES', 'NO', 'HELP', 'PLEASE'];
+Object.keys(SIGNS).forEach(key => {
+  const b = document.createElement('button');
+  b.className = 'chip ' + (DEMO_ORDER.includes(key) ? '' : 'sm'); b.type = 'button';
+  b.textContent = SIGNS[key].label;
+  b.title = SIGNS[key].note;
+  b.addEventListener('click', () => {
+    $$('#demoChips .chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+    b.setAttribute('aria-pressed', 'true');
+    showSign(key);
+  });
+  $('#demoChips').appendChild(b);
+});
+$('#demoChips').addEventListener('keydown', e => e.stopPropagation());
+
+const PHRASES = ['Hello, how are you?', 'Thank you so much', 'Please wait', 'Sorry, please slow down', 'Good morning'];
+PHRASES.forEach(p => {
+  const b = document.createElement('button');
+  b.className = 'chip v'; b.type = 'button';
+  b.textContent = '“' + p.replace(/\?/g, '') + '”';
+  b.addEventListener('click', () => { $('#typeInput').value = p; signText(p); });
+  $('#phraseChips').appendChild(b);
+});
+
+const wave = $('#wave');
+for (let i = 0; i < 26; i++) {
+  const bar = document.createElement('i');
+  bar.style.setProperty('--d', (i * .045).toFixed(3) + 's');
+  bar.style.height = (12 + Math.abs(Math.sin(i * 1.7)) * 60) + '%';
+  wave.appendChild(bar);
+}
+
+$('#btnSpeak').addEventListener('click', () => speak(state.currentText || 'Hello'));
+$('#btnToLog').addEventListener('click', () => {
+  if (!state.currentText) { toast('Nothing to add yet — try a sign first.'); return; }
+  addLog('me', state.currentText, 'sign');
+  toast('Added to conversation');
+});
+$('#btnClearSign').addEventListener('click', () => {
+  state.currentText = '';
+  $('#signText').textContent = 'Waiting for a sign…';
+  $('#signText').classList.add('empty');
+  $('#confBar').style.width = '0';
+  $('#confVal').textContent = '—';
+  idleCamera();
+});
+
+$('#btnMic').addEventListener('click', startListening);
+$('#signForm').addEventListener('submit', e => { e.preventDefault(); signText($('#typeInput').value); });
+$('#btnReplay').addEventListener('click', () => {
+  if (!state.currentText) { toast('Nothing to replay yet.'); return; }
+  avatarPlayer.play(textToSteps(state.currentText));
+});
+$('#btnSpeed').addEventListener('click', () => {
+  const order = [0.7, 1, 1.4];
+  state.speed = order[(order.indexOf(state.speed) + 1) % order.length];
+  $('#btnSpeed').textContent = state.speed + '×';
+  avatarPlayer.speed = state.speed; camPlayer.speed = state.speed;
+});
+
+let speechLang = 'en-IN';
+$$('#langChips .chip').forEach(b => b.addEventListener('click', () => {
+  $$('#langChips .chip').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  speechLang = b.dataset.lang;
+  $('#langNote').textContent = b.dataset.lang === 'hi-IN'
+    ? 'Hindi speech is transcribed, but the sign avatar only has English glosses so far — the word list falls back to fingerspelling.'
+    : 'Recognition language is passed to the speech API; the sign animation currently maps English glosses.';
+}));
+$$('#demoChips .chip').forEach(c => c.addEventListener('click', () => {
+  $$('#demoChips .chip').forEach(x => x.setAttribute('aria-pressed', String(x === c)));
+}));
+
+$$('.modes button, .mobile-modes button').forEach(btn => btn.addEventListener('click', () => {
+  $$('.modes button, .mobile-modes button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mode === btn.dataset.mode)));
+  document.body.className = 'mode-' + btn.dataset.mode + (document.body.classList.contains('hc') ? ' hc' : '');
+}));
+
+$('#btnClearLog').addEventListener('click', () => {
+  state.log = []; $('#logList').innerHTML = ''; $('#logCount').textContent = '0 messages';
+});
+$('#btnCopyLog').addEventListener('click', async () => {
+  if (!state.log.length) { toast('Conversation is empty.'); return; }
+  const text = state.log.map(m => `[${m.time}] ${m.side === 'me' ? 'Signed' : 'Spoken'}: ${m.text}`).join('\n');
+  try { await navigator.clipboard.writeText(text); toast('Transcript copied'); }
+  catch (e) { toast('Copy is blocked here — select the bubbles instead.'); }
+});
+
+const drawer = $('#drawer'), scrim = $('#scrim');
+function openDrawer(open) {
+  drawer.classList.toggle('open', open);
+  scrim.classList.toggle('open', open);
+  drawer.setAttribute('aria-hidden', String(!open));
+  $('#btnSettings').setAttribute('aria-expanded', String(open));
+}
+$('#btnSettings').addEventListener('click', () => openDrawer(true));
+$('#btnCloseDrawer').addEventListener('click', () => openDrawer(false));
+scrim.addEventListener('click', () => openDrawer(false));
+
+$$('#segTextSize button').forEach(b => b.addEventListener('click', () => {
+  $$('#segTextSize button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  document.documentElement.style.setProperty('--fs', b.dataset.size + 'px');
+}));
+$$('#segSpeed button').forEach(b => b.addEventListener('click', () => {
+  $$('#segSpeed button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  state.speed = parseFloat(b.dataset.speed);
+  avatarPlayer.speed = state.speed; camPlayer.speed = state.speed;
+  $('#btnSpeed').textContent = state.speed + '×';
+}));
+
+function bindSwitch(id, initial, fn) {
+  const el = $(id);
+  el.setAttribute('aria-pressed', String(initial));
+  el.addEventListener('click', () => {
+    const next = el.getAttribute('aria-pressed') !== 'true';
+    el.setAttribute('aria-pressed', String(next));
+    fn(next);
+  });
+}
+bindSwitch('#swSpeak', true, v => { state.speakOut = v; if (!v) { try { speechSynthesis.cancel(); } catch (e) {} } });
+bindSwitch('#swGloss', true, v => { state.showGloss = v; $('#capGloss').style.display = v ? '' : 'none'; });
+bindSwitch('#swMotion', false, v => { state.reduceMotion = v; });
+bindSwitch('#swContrast', false, v => document.body.classList.toggle('hc', v));
+
+avatarPlayer.onCaption = (label, gloss) => {
+  $('#capWord').textContent = label || 'Ready when you are';
+  $('#capGloss').textContent = gloss || '';
+  $('#capGloss').style.display = state.showGloss && gloss ? '' : 'none';
+};
+
+document.addEventListener('keydown', e => {
+  const typing = /input|textarea/i.test(document.activeElement.tagName);
+  if (e.key === 'Escape') { openDrawer(false); if (typing) document.activeElement.blur(); return; }
+  if (typing) return;
+  if (e.code === 'Space') { e.preventDefault(); startListening(); return; }
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= DEMO_ORDER.length) showSign(DEMO_ORDER[n - 1]);
+});
+
+let demoTimers = [];
+$('#btnDemo').addEventListener('click', () => {
+  demoTimers.forEach(clearTimeout); demoTimers = [];
+  state.log = []; $('#logList').innerHTML = ''; $('#logCount').textContent = '0 messages';
+  [
+    [200, () => showSign('HELLO', { addToLog: false })],
+    [2300, () => addLog('me', 'Hello', 'sign')],
+    [3000, () => signText('Hello! How are you today?')],
+    [11000, () => showSign('YES', { addToLog: false })],
+    [13200, () => addLog('me', 'Yes', 'sign')],
+    [14200, () => signText('Thank you, that helps a lot.')]
+  ].forEach(([ms, fn]) => demoTimers.push(setTimeout(fn, ms)));
+  toast('Playing a scripted two-way conversation…');
+});
+
+/* boot */
+idleCamera();
+idleAvatar();
+avatarPlayer.onCaption('Ready when you are', 'Tap “Sign it”, pick a quick phrase, or press the mic to see it signed.');
+setInterval(() => {
+  const lat = $('#miniLatency');
+  if (lat) lat.textContent = (34 + Math.round(Math.random() * 16)) + ' ms';
+}, 1800);
+
+</script>
+</body>
+</html>
